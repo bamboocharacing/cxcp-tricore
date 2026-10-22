@@ -1,6 +1,0 @@
-+posixstrictlib
--preproc
-
--I../../flsemu
--I../../inc
--I.

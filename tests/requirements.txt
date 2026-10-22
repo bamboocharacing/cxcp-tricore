@@ -1,4 +1,0 @@
-pytest
-hypothesis
-mako
-cpp-coveralls

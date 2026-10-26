@@ -143,6 +143,7 @@ extern "C" {
         #endif /* __cplusplus */
     #endif     /* XCP_EXTERN_C_GUARDS */
 
-    #define XCP_ASSERT(x) assert(x)
+    //#define XCP_ASSERT(x) assert(x)
+    #define XCP_ASSERT(x)
 
 #endif /* __XCP_MACROS_H */

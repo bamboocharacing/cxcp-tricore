@@ -37,7 +37,7 @@ void XcpHw_Init(void)
     Ifx_Lwip_init(ethAddr); 
 }
 
-IFX_INTERRUPT (updateLwIPStackISR, 0, ISR_PRIORITY_OS_TICK);
+IFX_INTERRUPT (updateLwIPStackISR, XCP_ON_ETHERNET_CORE, ISR_PRIORITY_OS_TICK);
 
 /* ISR to update LwIP stack */
 void updateLwIPStackISR(void)

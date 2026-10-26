@@ -22,13 +22,16 @@ void XcpTl_Udp_HandleIncomingData(struct pbuf *rxBuf)
         return;
     }
 
-    // TODO: check length in header that it matches with received data
-    //LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: Length in Header: %"U16_F".\n",
-    //    (u16_t)(rxBuf->payload[0])));
-
     if (rxBuf->tot_len > header_length)
     {
+        Xcp_Eth_Header_t *header = rxBuf->payload;
         uint16 payload_len = rxBuf->tot_len - header_length;
+
+        if (payload_len != header->len)
+        {
+            LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: Length in Header mismatches with Buffer.\n"));
+            return;
+        }
 
         pbuf_copy_partial(rxBuf, Xcp_CtoIn.data, payload_len, header_length);
         Xcp_CtoIn.len = payload_len;
@@ -41,8 +44,6 @@ void XcpTl_Udp_ReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbuf *p, c
 {
     struct pbuf *rxBuf = pbuf_alloc(PBUF_TRANSPORT, p->len, PBUF_RAM);
 
-    LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: Received Something.\n"));
-
     if (rxBuf != NULL)
     {
         pbuf_take(rxBuf, p->payload, p->len);        
@@ -53,6 +54,7 @@ void XcpTl_Udp_ReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbuf *p, c
 
         pbuf_free(rxBuf);
     }
+    
     /* Free RX buffer */
     pbuf_free(p);
 }
@@ -84,11 +86,11 @@ void XcpTl_Udp_Init(void)
 
 void XcpTl_Udp_Send(uint8_t const *buf, uint16_t len)
 {
-    LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("XcpTl_UdP: Send to IP: %"U16_F".%"U16_F".%"U16_F".%"U16_F"\n",
-        ip4_addr1_16(&remote_ip),
-        ip4_addr2_16(&remote_ip),
-        ip4_addr3_16(&remote_ip),
-        ip4_addr4_16(&remote_ip)));
+    // LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_TRACE | LWIP_DBG_STATE, ("XcpTl_UdP: Send to IP: %"U16_F".%"U16_F".%"U16_F".%"U16_F"\n",
+    //     ip4_addr1_16(&remote_ip),
+    //     ip4_addr2_16(&remote_ip),
+    //     ip4_addr3_16(&remote_ip),
+    //     ip4_addr4_16(&remote_ip)));
 
     if (remote_ip.addr == IPADDR_NONE)
     {

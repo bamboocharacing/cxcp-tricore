@@ -27,6 +27,12 @@ typedef struct udp_pcb udpPcb;
 typedef struct tcp_pcb tcpPcb; 
 #endif
 
+typedef struct IFX_PACKED
+{
+    uint16_t len;
+    uint16_t ctr;
+} Xcp_Eth_Header_t;
+
 void XcpTl_Init(void);
 void XcpTl_MainFunction(void);
 void XcpTl_Send(uint8_t const *buf, uint16_t len);

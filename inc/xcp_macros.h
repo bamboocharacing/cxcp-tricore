@@ -42,6 +42,7 @@ extern "C" {
         #endif /* __cplusplus */
     #endif     /* XCP_EXTERN_C_GUARDS */
 
+    #include "assert.h"
     #include <assert.h>
 
     #define XCP_DEBUG_BUILD   (1)
@@ -143,7 +144,11 @@ extern "C" {
         #endif /* __cplusplus */
     #endif     /* XCP_EXTERN_C_GUARDS */
 
-    //#define XCP_ASSERT(x) assert(x)
-    #define XCP_ASSERT(x)
+#ifdef IFX_ASSERT
+    #define XCP_ASSERT(x)   IFX_ASSERT(IFX_VERBOSE_LEVEL_ERROR, x)
+#else
+    #define XCP_ASSERT(x) assert(x)
+   // #define XCP_ASSERT(x)
+#endif
 
 #endif /* __XCP_MACROS_H */

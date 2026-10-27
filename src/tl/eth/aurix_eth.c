@@ -19,16 +19,16 @@ void XcpTl_Send(uint8_t const *buf, uint16_t len)
 #endif
 }
 
-void XcpTl_ResetConnectionStatus(void)
+static void XcpTl_ResetConnectionStatus(void)
 {
     g_xcp_eth_connectionstatus.isConnected = false;
-    g_xcp_eth_connectionstatus.remoteIpAddress.addr = IPADDR_NONE;
+    ip_addr_set_any(false, &g_xcp_eth_connectionstatus.remoteIpAddress);
     g_xcp_eth_connectionstatus.remotePort = 0;
-    g_xcp_eth_connectionstatus.tlUdpPcb = NULL;
 }
 
 void XcpTl_Init(void)
 {
+    g_xcp_eth_connectionstatus.tlUdpPcb = NULL;
     XcpTl_ResetConnectionStatus();
 
 #if XCP_ENABLE_ETH_DISCOVERY == XCP_ON
@@ -45,8 +45,6 @@ void XcpTl_Init(void)
 void XcpTl_ReleaseConnection(void)
 {
     XcpTl_ResetConnectionStatus();
-    // TODO: Reset connection status
-    // Remove TCP bindings
 }
 
 void XcpTl_SaveConnection(void)

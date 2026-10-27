@@ -874,6 +874,8 @@ void Xcp_DefaultResourceProtection(void) {
 }
 
 void Xcp_Disconnect(void) {
+    Xcp_State.connected = (bool)XCP_FALSE;
+    
     XcpTl_ReleaseConnection();
     Xcp_DefaultResourceProtection();
 #if XCP_ENABLE_DAQ_COMMANDS == XCP_ON

@@ -245,9 +245,10 @@ void XcpTimecorr_HandleTimeCorrelationProperties(Xcp_PduType const * const pdu);
 /* Handle GET_DAQ_CLOCK_MULTICAST reception.
  * Builds and sends extended EV_TIME_SYNC event packet if XCP is connected
  * and the cluster_id matches the cluster affiliation (or cluster_affiliation == 0).
- * cluster_id : cluster identifier from multicast packet (Intel byte order)
- * counter    : counter byte copied from GET_DAQ_CLOCK_MULTICAST */
-void XcpTimecorr_HandleMulticast(uint16_t cluster_id, uint8_t counter);
+ * cluster_id   : cluster identifier from multicast packet (Intel byte order)
+ * counter      : counter byte copied from GET_DAQ_CLOCK_MULTICAST
+ * rx_timestamp : XCP slave clock (XcpHw_GetTimerCounter) sampled on reception of the command */
+void XcpTimecorr_HandleMulticast(uint16_t cluster_id, uint8_t counter, uint32_t rx_timestamp);
 
 /* Send EV_TIME_SYNC for a non-multicast trigger (e.g. PPS signal, state change).
  * Only sent when RESPONSE_FMT == XCP_TIMECORR_FMT_EXT_2.

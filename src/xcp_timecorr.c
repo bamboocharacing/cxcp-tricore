@@ -100,7 +100,7 @@ static const XcpTimecorr_ClockInfoType XcpTimecorr_SlaveClockInfo = {
 
 static void XcpTimecorr_BuildClockInfoBlock(bool include_grandm, bool include_relation);
 static void XcpTimecorr_SendTimeSyncInternal(
-    uint8_t trigger_initiator, bool include_cluster_id, uint16_t cluster_id, uint8_t counter
+    uint8_t trigger_initiator, bool include_cluster_id, uint16_t cluster_id, uint8_t counter, uint32_t const *slv_timestamp
 );
 static void    XcpTimecorr_WriteClockInfoStruct(uint8_t *dst, XcpTimecorr_ClockInfoType const *info);
 static uint8_t XcpTimecorr_BuildObservableClocks(void);
@@ -285,7 +285,7 @@ void XcpTimecorr_HandleTimeCorrelationProperties(Xcp_PduType const * const pdu) 
 ** ============================================================
 */
 
-void XcpTimecorr_HandleMulticast(uint16_t cluster_id, uint8_t counter) {
+void XcpTimecorr_HandleMulticast(uint16_t cluster_id, uint8_t counter, uint32_t rx_timestamp) {
     /* Only respond if cluster_id matches affiliation (or default affiliation == 0 accepts all) */
     if ((XcpTimecorr_State.cluster_affiliation != UINT16(0)) && (cluster_id != XcpTimecorr_State.cluster_affiliation)) {
         return;
@@ -303,7 +303,7 @@ void XcpTimecorr_HandleMulticast(uint16_t cluster_id, uint8_t counter) {
 
     XcpTimecorr_SendTimeSyncInternal(
         XCP_TIMECORR_TRIG_MULTICAST, true, /* include cluster id + counter */
-        cluster_id, counter
+        cluster_id, counter, &rx_timestamp
     );
 }
 
@@ -323,7 +323,7 @@ void XcpTimecorr_SendTimeSyncEvent(uint8_t trigger_initiator) {
         return;
     }
 
-    XcpTimecorr_SendTimeSyncInternal(trigger_initiator, false, UINT16(0), UINT8(0));
+    XcpTimecorr_SendTimeSyncInternal(trigger_initiator, false, UINT16(0), UINT8(0), XCP_NULL);
 }
 
 /*
@@ -470,7 +470,7 @@ static void XcpTimecorr_BuildClockInfoBlock(bool include_grandm, bool include_re
  *   [+1]        SYNC_STATE                 (if any clock can be sync'd)
  */
 static void XcpTimecorr_SendTimeSyncInternal(
-    uint8_t trigger_initiator, bool include_cluster_id, uint16_t cluster_id, uint8_t counter
+    uint8_t trigger_initiator, bool include_cluster_id, uint16_t cluster_id, uint8_t counter, uint32_t const *slv_timestamp
 ) {
     uint8_t payload[32]; /* sufficient for all scenarios */
     uint8_t pos             = UINT8(0);
@@ -521,10 +521,13 @@ static void XcpTimecorr_SendTimeSyncInternal(
 
     XCP_ENTER_CRITICAL();
 
+    /* Use the caller's timestamp if given (e.g. sampled on reception), else sample now */
+    uint32_t const slv_ts_now = (slv_timestamp != XCP_NULL) ? *slv_timestamp : XcpHw_GetTimerCounter();
+
     if (fmt_xcp_slv == UINT8(1)) {
-        slv_ts_32 = XcpHw_GetTimerCounter();
+        slv_ts_32 = slv_ts_now;
     } else if (fmt_xcp_slv == UINT8(2)) {
-        slv_ts_64 = (uint64_t)XcpHw_GetTimerCounter();
+        slv_ts_64 = (uint64_t)slv_ts_now;
     }
 
     #if XCP_TIMECORR_GRANDM_CLK > 0

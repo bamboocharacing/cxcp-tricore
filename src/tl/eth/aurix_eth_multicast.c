@@ -2,10 +2,11 @@
 
 #if XCP_ENABLE_ETH_DISCOVERY == XCP_ON
 
-typedef enum tagXcp_DiscoveryCommandType {
+typedef enum tagXcp_TlCommandType {
     GET_SERVER_ID           = UINT8(0xFF),
-    GET_SERVER_ID_EXTENDED  = UINT8(0xFD)
-} Xcp_DiscoveryCommandType;
+    GET_SERVER_ID_EXTENDED  = UINT8(0xFD),
+    GET_DAQ_CLOCK_MULTICAST = UINT8(0xFA)
+} Xcp_TlCommandType;
 
 typedef struct IFX_PACKED
 {
@@ -27,6 +28,109 @@ static struct udp_pcb *s_discoveryPcb;
 static netif_ext_callback_t s_xcp_eth_netif_callback;
 
 static void XcpTl_BindMulticast(void);
+
+#if defined(XCP_ENABLE_TIME_CORRELATION) && (XCP_ENABLE_TIME_CORRELATION == XCP_ON)
+#include "xcp_timecorr.h"
+
+static struct udp_pcb *s_timeSyncPcb;
+static ip4_addr_t s_timeSyncGroup;      /* Currently joined cluster group, any = none */
+
+/* Cluster affiliation maps to 239.255.HI.LO */
+static void XcpTl_ClusterToGroup(uint16 clusterId, ip4_addr_t *group)
+{
+    IP4_ADDR(group, 239, 255, XCP_HIBYTE(clusterId), XCP_LOBYTE(clusterId));
+}
+
+static void XcpTl_JoinTimeSyncGroup(uint16 clusterId)
+{
+    if (!ip4_addr_isany_val(s_timeSyncGroup))
+    {
+        igmp_leavegroup_netif(netif_default, &s_timeSyncGroup);
+        ip4_addr_set_any(&s_timeSyncGroup);
+    }
+
+    ip4_addr_t group;
+    XcpTl_ClusterToGroup(clusterId, &group);
+
+    if (igmp_joingroup_netif(netif_default, &group) == ERR_OK)
+    {
+        ip4_addr_copy(s_timeSyncGroup, group);
+    }
+    else
+    {
+        LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [TimeSync] Unable to join group.\n"));
+    }
+}
+
+static void XcpTl_TimeSync_ReceiveCallback(void *arg, struct udp_pcb *pcb, struct pbuf *p, const ip_addr_t *addr, u16_t port)
+{
+    /* Sample first: the EV_TIME_SYNC reports this as "upon physical reception" */
+    const uint32 rxTimestamp = XcpHw_GetTimerCounter();
+
+    LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [TimeSync] Packet incoming.\n"));
+
+    if (p != NULL)
+    {
+        uint8 req[5]; /* 0xF2, 0xFA, CLUSTER_ID (LE), COUNTER */
+
+        if (pbuf_copy_partial(p, req, sizeof(req), sizeof(Xcp_Eth_Header_t)) == sizeof(req) &&
+            req[0] == XCP_TRANSPORT_LAYER_CMD &&
+            req[1] == GET_DAQ_CLOCK_MULTICAST)
+        {
+            /* Core checks cluster affiliation, connection and response format, then answers via XcpTl_Send */
+            XcpTimecorr_HandleMulticast(XCP_MAKEWORD(req[3], req[2]), req[4], rxTimestamp);
+        }
+
+        /* Free RX buffer */
+        pbuf_free(p);
+    }
+}
+
+static void XcpTl_BindTimeSync(void)
+{
+    if (s_timeSyncPcb != NULL)
+    {
+        /* Already bound: discovery bind is retried on address change, time sync must not be */
+        return;
+    }
+
+    LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [TimeSync] Binding.\n"));
+
+    s_timeSyncPcb = udp_new();
+
+    if (s_timeSyncPcb != NULL)
+    {
+        err_t err = udp_bind(s_timeSyncPcb, IP_ADDR_ANY, XCP_TIMECORR_MULTICAST_PORT);
+
+        if (err == ERR_OK)
+        {
+            XcpTl_JoinTimeSyncGroup(XcpTimecorr_GetClusterAffiliation());
+            udp_recv(s_timeSyncPcb, XcpTl_TimeSync_ReceiveCallback, NULL);
+        }
+        else
+        {
+            LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [TimeSync] Unable to Bind.\n"));
+
+            udp_remove(s_timeSyncPcb);
+            s_timeSyncPcb = NULL;
+        }
+    }
+    else
+    {
+        LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [TimeSync] Unable to create a UDP Control Block.\n"));
+    }
+}
+
+/* Called by the core when TIME_CORRELATION_PROPERTIES sets a new cluster affiliation */
+void XcpTl_UpdateMulticastGroup(uint16_t cluster_id)
+{
+    /* Before the first IP the group is joined on bind, using the then-current affiliation */
+    if (s_timeSyncPcb != NULL)
+    {
+        XcpTl_JoinTimeSyncGroup(cluster_id);
+    }
+}
+#endif
 
 static void XcpTl_NetifStatusCallback(struct netif *netif, netif_nsc_reason_t reason, const netif_ext_callback_args_t *args)
 {
@@ -153,6 +257,10 @@ static void XcpTl_Multicast_ReceiveCallback(void *arg, struct udp_pcb *pcb, stru
 void XcpTl_InitMulticast(void)
 {
     s_discoveryPcb = NULL;
+#if defined(XCP_ENABLE_TIME_CORRELATION) && (XCP_ENABLE_TIME_CORRELATION == XCP_ON)
+    s_timeSyncPcb = NULL;
+    ip4_addr_set_any(&s_timeSyncGroup);
+#endif
     netif_add_ext_callback(&s_xcp_eth_netif_callback, XcpTl_NetifStatusCallback);
 
     /* Static IP or DHCP already bound before we registered: no address-change event will come */
@@ -171,7 +279,7 @@ static void XcpTl_BindMulticast(void)
         XCP_ETH_DISCOVERY_MCAST_IP2,
         XCP_ETH_DISCOVERY_MCAST_IP3);
 
-    LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [Multicast] Init.\n"));
+    LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [Multicast] Binding.\n"));
 
     s_discoveryPcb = udp_new();
 
@@ -203,6 +311,11 @@ static void XcpTl_BindMulticast(void)
     {
         LWIP_DEBUGF(XCP_TL_UDP_DEBUG | LWIP_DBG_STATE, ("XcpTl_UdP: [Multicast] Unable to create a UDP Control Block.\n"));
     }
+
+#if defined(XCP_ENABLE_TIME_CORRELATION) && (XCP_ENABLE_TIME_CORRELATION == XCP_ON)
+    /* Same trigger as discovery: first valid IP, so the IGMP join has a valid source */
+    XcpTl_BindTimeSync();
+#endif
 }
 
 #endif
